@@ -10,11 +10,10 @@ RUN test "$OO_PAUSE_ON_BUILD" = "true" && while sleep 10; do true; done || :
 RUN yum-install-check.sh -y clamav-update \
                             clamav-unofficial-sigs \
                             python2-boto3 \
-                            python2-botocore \
-                            openshift-tools-scripts-monitoring \
-                            openshift-tools-scripts-clam-update \
-                            && \
+                            python2-botocore && \
     yum clean all
+
+ADD scripts/ /usr/local/bin/
 
 # Modify permissions needed to run as the clamupdate user
 RUN chown -R clamupdate:clamupdate /etc/clamav-unofficial-sigs && \
@@ -43,7 +42,6 @@ RUN sed -i -e 's/reload_dbs="yes"/reload_dbs="no"/' /etc/clamav-unofficial-sigs/
     ln -sf /secrets/openshift_signatures.ign2 /var/lib/clamav/openshift_signatures.ign2 && \
     ln -sf /secrets/openshift_signatures.ldb /var/lib/clamav/openshift_signatures.ldb && \
     ln -sf /secrets/openshift_whitelist.sfp /var/lib/clamav/openshift_whitelist.sfp
-
 
 # run as clamupdate user
 USER 999
