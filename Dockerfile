@@ -1,6 +1,6 @@
 # /usr/local/bin/start.sh will start the service
 
-FROM openshifttools/oso-centos7-ops-base:latest
+FROM golang:latest
 
 # Pause indefinitely if asked to do so.
 ARG OO_PAUSE_ON_BUILD
@@ -8,12 +8,19 @@ RUN test "$OO_PAUSE_ON_BUILD" = "true" && while sleep 10; do true; done || :
 
 # Install clam-update
 RUN yum-install-check.sh -y clamav-update \
-                            clamav-unofficial-sigs \
-                            python2-boto3 \
-                            python2-botocore && \
+                            clamav-unofficial-sigs && \
     yum clean all
 
 ADD scripts/ /usr/local/bin/
+
+ENV GOBIN=/bin \
+    GOPATH=/go
+
+RUN go get github.com/rhdedgar/clam-update && \
+    cd /go/src/github.com/rhdedgar/clam-update && \
+    go install && \
+    cd && \
+    rm -rf /go
 
 # Modify permissions needed to run as the clamupdate user
 RUN chown -R clamupdate:clamupdate /etc/clamav-unofficial-sigs && \
@@ -47,6 +54,5 @@ RUN sed -i -e 's/reload_dbs="yes"/reload_dbs="no"/' /etc/clamav-unofficial-sigs/
 USER 999
 
 # Start clam-update processes
-ADD ops-run-in-loop start.sh /usr/local/bin/
 ADD clamav-unofficial-sigs.conf /etc/clamav-unofficial-sigs/
 CMD /usr/local/bin/start.sh

@@ -29,4 +29,4 @@ sleep 300
 echo
 echo 'Pushing signatures to bucket every 12 hours'
 echo '----------------'
-/usr/local/bin/ops-run-in-loop 43200 /usr/local/bin/push_clam_signatures &>/dev/null
+/usr/local/bin/ops-run-in-loop 43200 /usr/bin/clam-update &>/dev/null
