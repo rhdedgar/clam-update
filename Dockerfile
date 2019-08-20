@@ -1,14 +1,15 @@
 # /usr/local/bin/start.sh will start the service
 
-FROM golang:latest
+FROM registry.access.redhat.com/ubi7/ubi-minimal:latest
 
 # Pause indefinitely if asked to do so.
 ARG OO_PAUSE_ON_BUILD
 RUN test "$OO_PAUSE_ON_BUILD" = "true" && while sleep 10; do true; done || :
 
 # Install clam-update
-RUN yum install -y clamav-update \
-                            clamav-unofficial-sigs && \
+RUN yum install -y golang \
+                   clamav-update \
+                   clamav-unofficial-sigs && \
     yum clean all
 
 ADD scripts/ /usr/local/bin/
