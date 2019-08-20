@@ -7,10 +7,10 @@ ARG OO_PAUSE_ON_BUILD
 RUN test "$OO_PAUSE_ON_BUILD" = "true" && while sleep 10; do true; done || :
 
 # Install clam-update
-RUN yum install -y golang \
+RUN /usr/bin/yum install -y golang \
                    clamav-update \
                    clamav-unofficial-sigs && \
-    yum clean all
+    /usr/bin/yum clean all
 
 ADD scripts/ /usr/local/bin/
 
