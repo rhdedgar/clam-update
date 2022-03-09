@@ -12,21 +12,6 @@ if [ "$OO_PAUSE_ON_START" = "true" ] ; then
   done
 fi
 
-# Keep running freshclam and clamav-unofficial-sigs every 12 hours
-echo
-echo 'Updating ClamAV official signatures every 12 hours'
-echo '----------------'
-/usr/local/bin/ops-run-in-loop 43200 /usr/bin/freshclam &>/dev/null &
-echo
-# Pause for 5 minutes so they don't run at the same time
-sleep 300
-echo
-echo 'Updating ClamAV unofficial signatures every 12 hours'
-echo '----------------'
-/usr/local/bin/ops-run-in-loop 43200 /usr/bin/clamav-unofficial-sigs.sh &>/dev/null &
-# Pause for another 5 minutes and sync new files to the bucket
-sleep 300
-echo
 echo 'Pushing signatures to bucket every 12 hours'
 echo '----------------'
 /usr/local/bin/ops-run-in-loop 43200 /usr/bin/clam-update &>/dev/null

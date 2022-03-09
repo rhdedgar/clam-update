@@ -18,8 +18,10 @@ package models
 
 // AppSecrets holds needed config info for the application to function
 type AppSecrets struct {
-	OcavOpsFiles      []string `json:"ocav_ops_files"`
-	OcavTimestampPath string   `json:"ocav_timestamp_path"`
-	OcavCredsFile     string   `json:"ocav_creds_file"`
-	OcavS3Bucket      string   `json:"ocav_s3_bucket"`
+	BucketName    string   `json:"signature_mirror_bucket"`
+	BucketRegion  string   `json:"signature_bucket_region"`
+	BucketKey     string   `json:"signature_bucket_key"`
+	BucketKeyID   string   `json:"signature_bucket_key_id"`
+	ContentFiles  []string `json:"signature_config_files"`
+	TimestampPath string   `json:"ocav_timestamp_path"`
 }

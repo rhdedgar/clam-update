@@ -25,32 +25,39 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-
 	"github.com/rhdedgar/clam-update/models"
+)
+
+var (
+	appSecrets models.AppSecrets
 )
 
 // upload gets timestamps of all files in the bucket, compares with local
 // file timestamps, then uploads if the local files are newer
-func upload(bucket string, fileList []string) {
+func upload(bucket string, fileList []string) error {
 	timeMap := make(map[string]time.Time)
 
 	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1")},
-	)
+		Region: aws.String(appSecrets.BucketRegion),
+		Credentials: credentials.NewStaticCredentials(
+			appSecrets.BucketKeyID,
+			appSecrets.BucketKey,
+			""),
+	})
+	if err != nil {
+		return fmt.Errorf("Unable to create new AWS session: %v\n", err)
+	}
 
 	uploader := s3manager.NewUploader(sess)
 	svc := s3.New(sess)
 
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
 	if err != nil {
-		fmt.Printf("Unable to list items in bucket %v, %v\n", bucket, err)
-	}
-
-	if err != nil {
-		fmt.Println("Unable to open new AWS session: ", err)
+		return fmt.Errorf("Unable to list items in bucket %v, %v\n", bucket, err)
 	}
 
 	// Add bucket file timestamps to a Map if the files are also in our file list
@@ -67,7 +74,7 @@ func upload(bucket string, fileList []string) {
 
 		info, err := os.Stat(filePath)
 		if err != nil {
-			fmt.Println("Error getting last modification time from: ", filePath)
+			return fmt.Errorf("Error getting last modification time from: %v\n", filePath)
 		}
 
 		// Check if our local file was modified more recently than the bucket's copy
@@ -77,6 +84,7 @@ func upload(bucket string, fileList []string) {
 				fmt.Printf("Unable to open file %v: %v\n", fileName, err)
 				continue
 			}
+
 			defer file.Close()
 
 			_, err = uploader.Upload(&s3manager.UploadInput{
@@ -87,21 +95,19 @@ func upload(bucket string, fileList []string) {
 				Body: file,
 			})
 			if err != nil {
-				fmt.Printf("Unable to upload %v to %v, %v\n", filePath, bucket, err)
-				break
+				return fmt.Errorf("Unable to upload %v to %v, %v\n", filePath, bucket, err)
 			}
 
 			fmt.Printf("Successfully uploaded %v to %v\n", filePath, bucket)
 		}
 	}
+	return nil
 }
 
 func main() {
-	var appSecrets models.AppSecrets
+	filePath := os.Getenv("SECRET_CONFIG_FILE")
 
-	filePath := os.Getenv("SECRET_CONFIG")
 	fileBytes, err := ioutil.ReadFile(filePath)
-
 	if err != nil {
 		fmt.Println("Error loading secrets json: ", err)
 	}
@@ -111,7 +117,10 @@ func main() {
 		fmt.Println("Error Unmarshaling secrets json: ", err)
 	}
 
-	os.Setenv("AWS_SHARED_CREDENTIALS_FILE", appSecrets.OcavCredsFile)
+	//os.Setenv("AWS_SHARED_CREDENTIALS_FILE", appSecrets.OcavCredsFile)
 
-	upload(appSecrets.OcavS3Bucket, appSecrets.OcavOpsFiles)
+	err = upload(appSecrets.BucketName, appSecrets.ContentFiles)
+	if err != nil {
+		fmt.Println("Error uploading files to bucket: ", err)
+	}
 }
