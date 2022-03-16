@@ -109,7 +109,7 @@ func main() {
 
 	fileBytes, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		fmt.Println("Error loading secrets json: ", err)
+		fmt.Println("Error loading secrets json from: ", filePath, err)
 	}
 
 	err = json.Unmarshal(fileBytes, &appSecrets)
