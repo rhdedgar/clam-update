@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -34,6 +35,7 @@ import (
 
 var (
 	appSecrets models.AppSecrets
+	clamDir    = os.Getenv("CLAM_DB_DIRECTORY")
 )
 
 // upload gets timestamps of all files in the bucket, compares with local
@@ -70,11 +72,12 @@ func upload(bucket string, fileList []string) error {
 	}
 
 	for _, fileName := range fileList {
-		filePath := path.Join("/var/lib/clamav/", fileName)
+		filePath := path.Join(clamDir, fileName)
 
 		info, err := os.Stat(filePath)
 		if err != nil {
-			return fmt.Errorf("Error getting last modification time from: %v\n", filePath)
+			fmt.Printf("Error getting last modification time from: %v\n", filePath)
+			continue
 		}
 
 		// Check if our local file was modified more recently than the bucket's copy
@@ -118,6 +121,14 @@ func main() {
 	}
 
 	//os.Setenv("AWS_SHARED_CREDENTIALS_FILE", appSecrets.OcavCredsFile)
+	if clamDir == "" {
+		clamDir = "/var/lib/clamav/"
+	}
+
+	// be tolerant of an env var path not already suffixed with a trailing slash
+	if !strings.HasSuffix(clamDir, "/") {
+		clamDir = clamDir + "/"
+	}
 
 	err = upload(appSecrets.BucketName, appSecrets.ContentFiles)
 	if err != nil {

@@ -12,7 +12,7 @@ if [ "$OO_PAUSE_ON_START" = "true" ] ; then
   done
 fi
 
-echo 'signature-updater v0.0.2'
+echo 'signature-updater v0.0.4'
 echo
 echo 'Pushing signatures to bucket every 12 hours'
 echo '----------------'
