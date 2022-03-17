@@ -12,8 +12,6 @@ if [ "$OO_PAUSE_ON_START" = "true" ] ; then
   done
 fi
 
-echo 'signature-updater v0.0.4'
-echo
 echo 'Pushing signatures to bucket every 12 hours'
 echo '----------------'
 /usr/local/bin/ops-run-in-loop 43200 /usr/local/bin/clam-update

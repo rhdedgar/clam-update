@@ -8,7 +8,7 @@ ENV GOBIN=/bin \
     GOPATH=/go
 
 # install clam-update
-RUN /usr/bin/go install github.com/rhdedgar/clam-update@latest
+RUN /usr/bin/go install github.com/rhdedgar/clam-update@master
 
 
 # begin run container definition

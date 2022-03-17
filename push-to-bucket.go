@@ -84,7 +84,7 @@ func upload(bucket string, fileList []string) error {
 		if info.ModTime().After(timeMap[fileName]) {
 			file, err := os.Open(filePath)
 			if err != nil {
-				fmt.Printf("Unable to open file %v: %v\n", fileName, err)
+				fmt.Printf("Unable to open file %v: %v\n", filePath, err)
 				continue
 			}
 
@@ -93,7 +93,7 @@ func upload(bucket string, fileList []string) error {
 			_, err = uploader.Upload(&s3manager.UploadInput{
 				Bucket: aws.String(bucket),
 
-				Key: aws.String(filePath),
+				Key: aws.String(fileName),
 
 				Body: file,
 			})
@@ -108,6 +108,8 @@ func upload(bucket string, fileList []string) error {
 }
 
 func main() {
+	fmt.Println("signature-updater v0.0.5")
+
 	filePath := os.Getenv("SECRET_CONFIG_FILE")
 
 	fileBytes, err := ioutil.ReadFile(filePath)
