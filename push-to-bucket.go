@@ -26,8 +26,10 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -41,7 +43,7 @@ import (
 var (
 	appSecrets models.AppSecrets
 	//verifiedFiles = map[string]string{}
-	checksumCache = &models.VerifiedFiles{}
+	//checksumCache = &models.VerifiedFiles{}
 )
 
 func getSession() (*session.Session, error) {
@@ -59,85 +61,51 @@ func getSession() (*session.Session, error) {
 	return sess, nil
 }
 
-// upload gets timestamps of all files in the bucket, compares with local
-// file timestamps, then uploads if the local files are newer
-/*
-func upload(bucket, fileDir string, fileList []string) error {
-	timeMap := make(map[string]time.Time)
+// gzipFile reads a filename and returns a pointer to a bytes.Buffer containing the gzipped file.
+func gzipFile(fileName string) (*bytes.Buffer, error) {
+	var buf bytes.Buffer
 
-	sess, err := getSession()
+	fileBytes, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		return fmt.Errorf("Error returned from getSession: %v\n", err)
+		return &buf, fmt.Errorf("error ioutil reading file: %v\n", err)
 	}
 
-	uploader := s3manager.NewUploader(sess)
-	svc := s3.New(sess)
+	zw := gzip.NewWriter(&buf)
+	zw.ModTime = time.Now()
 
-	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
-	if err != nil {
-		return fmt.Errorf("Unable to list items in bucket %v, %v\n", bucket, err)
+	if _, err = zw.Write(fileBytes); err != nil {
+		return &buf, fmt.Errorf("error writing zw: %v\n", err)
 	}
 
-	// Add bucket file timestamps to a Map if the files are also in our file list
-	for _, bucketItem := range resp.Contents {
-		for _, listItem := range fileList {
-			if *bucketItem.Key == listItem {
-				timeMap[*bucketItem.Key] = *bucketItem.LastModified
-			}
-		}
+	if err := zw.Close(); err != nil {
+		return &buf, fmt.Errorf("error closing zw: %v\n", err)
 	}
 
-	for _, fileName := range fileList {
-		filePath := path.Join(fileDir, fileName)
-
-		info, err := os.Stat(filePath)
-		if err != nil {
-			fmt.Printf("Error getting last modification time from: %v\n", filePath)
-			continue
-		}
-
-		// Check if our local file was modified more recently than the bucket's copy
-		if info.ModTime().After(timeMap[fileName]) {
-			file, err := os.Open(filePath)
-			if err != nil {
-				fmt.Printf("Unable to open file %v: %v\n", filePath, err)
-				continue
-			}
-			defer file.Close()
-
-			// BEGIN HASH
-			sha := sha256.New()
-
-			_, err = io.Copy(sha, file)
-			if err != nil {
-				return fmt.Errorf("Error io.Copying file %v: %v\n", fileName, err)
-			}
-
-			// TODO: if this string != the sha sum for the map item we read from the server checksum map returner
-			checksum := hex.EncodeToString(sha.Sum(nil))
-
-			if checksum != "" {
-				verifiedFiles[fileName] = checksum
-			}
-			// END HASH
-
-			_, err = uploader.Upload(&s3manager.UploadInput{
-				Bucket: aws.String(bucket),
-
-				Key: aws.String(fileName),
-
-				Body: file,
-			})
-			if err != nil {
-				return fmt.Errorf("Unable to upload %v to %v, %v\n", filePath, bucket, err)
-			}
-
-			fmt.Printf("Successfully uploaded %v to %v\n", filePath, bucket)
-		}
-	}
-	return nil
+	return &buf, nil
 }
-*/
+
+// gzipFile2 reads a filename and returns a pointer to a bytes.Buffer containing the gzipped file.
+func gzipFile2(fileBytes []byte) (*bytes.Buffer, error) {
+	var buf bytes.Buffer
+
+	//fileBytes, err := ioutil.ReadFile(fileName)
+	//if err != nil {
+	//	return &buf, fmt.Errorf("error ioutil reading file: %v\n", err)
+	//}
+
+	zw := gzip.NewWriter(&buf)
+	zw.ModTime = time.Now()
+
+	if _, err := zw.Write(fileBytes); err != nil {
+		return &buf, fmt.Errorf("error writing zw: %v\n", err)
+	}
+
+	if err := zw.Close(); err != nil {
+		return &buf, fmt.Errorf("error closing zw: %v\n", err)
+	}
+
+	return &buf, nil
+}
 
 func upload(bucket, fileDir string, fileList []string) error {
 	for _, fileName := range fileList {
@@ -153,37 +121,38 @@ func upload(bucket, fileDir string, fileList []string) error {
 		// BEGIN HASH
 		sha := sha256.New()
 
-		//fileBytes, err := ioutil.ReadFile(fileName)
-		//if err != nil {
-		//	fmt.Println("reading error", err)
-		//}
-
-		//sha.Write(data)
-		data := io.TeeReader(file, sha)
+		tr := io.TeeReader(file, sha)
 		checksum := hex.EncodeToString(sha.Sum(nil))
-
-		//_, err = io.Copy(sha, data)
-		//if err != nil {
-		//		return fmt.Errorf("Error io.Copying file %v: %v\n", fileName, err)
-		//	}
-
-		// TODO: if this string != the sha sum for the map item we read from the server checksum map returner
-		//checksum := hex.EncodeToString(sha.Sum(nil))
 
 		if checksum == "" {
 			continue
 		}
+
+		err = uploadSingle(bucket, fileName+"_checksum.txt", checksum)
+		if err != nil {
+			return fmt.Errorf("Unable to upload %v to %v, %v\n", filePath, bucket, err)
+		}
 		// END HASH
 
-		/*_, err = uploader.Upload(&s3manager.UploadInput{
-			Bucket: aws.String(bucket),
+		//reader := bufio.NewReader(file)
+		//zipData, err := gzipFile(filePath)
+		//r := bytes.NewReader(data)
+		fileBytes, err := io.ReadAll(tr)
+		if err != nil {
+			fmt.Println(err)
+		}
 
-			Key: aws.String(fileName),
+		zipData, err := gzipFile2(fileBytes)
+		if err != nil {
+			fmt.Printf("Unable to open file %v: %v\n", filePath, err)
+			continue
+		}
 
-			Body: data,
-		})
-		*/
-		err = uploadSingle(bucket, fileName, data)
+		//zipData, err := gzipFile(data)
+		//zw := gzip.NewWriter(file)
+		//zw.ModTime = time.Now()
+
+		err = uploadSingle(bucket, fileName+".gz", zipData)
 		if err != nil {
 			return fmt.Errorf("Unable to upload %v to %v, %v\n", filePath, bucket, err)
 		}
@@ -283,11 +252,11 @@ func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
 			}
 			//defer zr.Close()
 
-			sha := sha256.New()
-			data := io.TeeReader(zr, sha)
-			checksum := hex.EncodeToString(sha.Sum(nil))
+			//sha := sha256.New()
+			//data := io.TeeReader(zr, sha)
+			//checksum := hex.EncodeToString(sha.Sum(nil))
 
-			if _, err := io.Copy(newFile, data); err != nil {
+			if _, err := io.Copy(newFile, zr); err != nil {
 				return fmt.Errorf("could not copy zr to newFile: %v\n", err)
 			}
 
@@ -299,15 +268,6 @@ func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
 				return fmt.Errorf("could not close newFile: %v\n", err)
 			}
 
-			println("checksum is: ", checksum)
-
-			if lf, ok := checksumCache.LocalFiles[f]; ok {
-				lf.Name = f
-				lf.Checksum = hex.EncodeToString(sha.Sum(nil))
-
-				checksumCache.LocalFiles[f] = lf
-			}
-
 			fmt.Println("Downloaded the following:")
 			fmt.Println("Name:         ", *item.Key)
 			fmt.Println("Last modified:", *item.LastModified)
@@ -317,117 +277,6 @@ func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
 	}
 	return nil
 }
-
-// DownloadSignatures compares signature databases on disk with those in the clam mirror bucket.
-// It will download copies of the databases if found to be newer than what's on disk.
-/*
-func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
-	downloader := s3manager.NewDownloaderWithClient(svc)
-
-	// Loop through bucket contents, and compare with our set. If file is a match, then download it.
-	for _, item := range resp.Contents {
-		splitItem := strings.Split(*item.Key, ".")
-		baseItem := splitItem[0]
-
-		if _, ok := checksumCache[splitItem[0]]; ok {
-			newFile, err := os.Create(filepath.Join(config.ClamInstallDir, item))
-			if err != nil {
-				fmt.Println("Unable to open file:", item)
-				return err
-			}
-			defer newFile.Close()
-
-			buf := aws.NewWriteAtBuffer([]byte{})
-			zr, err := gzip.NewReader(&buf)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			//sha := sha256.New()
-			//data := io.TeeReader(newFile, sha)
-
-			_, err = downloader.Download(buf,
-				&s3.GetObjectInput{
-					Bucket: aws.String(configFile.ClamMirrorBucket),
-					Key:    aws.String(*item.Key),
-				})
-			if err != nil {
-				fmt.Println("Unable to download item:", item)
-				return err
-			}
-
-			fmt.Println("Downloaded the following:")
-			fmt.Println("Name:         ", *item.Key)
-			fmt.Println("Last modified:", *item.LastModified)
-			fmt.Println("Size:         ", *item.Size, "bytes")
-			fmt.Println("")
-		}
-	}
-	return nil
-}
-
-// DownloadSignatures compares signature databases on disk with those in the clam mirror bucket.
-// It will download copies of the databases if found to be newer than what's on disk.
-func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
-	downloader := s3manager.NewDownloaderWithClient(svc)
-
-	// Loop through bucket contents, and compare with our json array. If file is a match, then
-	// check if doesn't exist, and check if the bucket's file is newer. Download it in those cases.
-	for _, item := range resp.Contents {
-		for _, localItem := range appSecrets.ConfigFiles {
-			if *item.Key == localItem {
-				fileStat, err := os.Stat(filepath.Join(config.ClamInstallDir, localItem))
-				if os.IsNotExist(err) || fileStat.ModTime().Before(*item.LastModified) {
-
-					newFile, err := os.Create(filepath.Join(config.ClamInstallDir, localItem))
-					if err != nil {
-						fmt.Println("Unable to open file:", item)
-						return err
-					}
-
-					defer newFile.Close()
-
-					_, err = downloader.Download(newFile,
-						&s3.GetObjectInput{
-							Bucket: aws.String(configFile.ClamMirrorBucket),
-							Key:    aws.String(*item.Key),
-						})
-					if err != nil {
-						fmt.Println("Unable to download item:", item)
-						return err
-					}
-
-					fmt.Println("Downloaded the following:")
-					fmt.Println("Name:         ", *item.Key)
-					fmt.Println("Last modified:", *item.LastModified)
-					fmt.Println("Size:         ", *item.Size, "bytes")
-					fmt.Println("")
-
-				} else if err != nil {
-					fmt.Println("Hit an issue opening the file:")
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-
-
-
-func bucketDownload(bucket, fileDir string, fileList []string) error {
-	sess, err := getSession()
-	if err != nil {
-		return fmt.Errorf("Error returned from getSession: %v\n", err)
-	}
-
-	svc := getService(sess)
-
-	downloader := s3manager.NewDownloaderWithClient(svc)
-	return nil
-}
-*/
 
 // getService returns a new S3 client service from an existing session.
 func getService(sess *session.Session) *s3.S3 {
@@ -452,15 +301,28 @@ func downloadSingle(item string, svc *s3.S3) error {
 		return fmt.Errorf("Download failed: %v\n", err)
 	}
 
-	err = json.Unmarshal(buf.Bytes(), &checksumCache)
-	if err != nil {
-		return fmt.Errorf("Failed to Unmarshal bytes to checksumCache: %v\n", err)
+	/*
+		err = json.Unmarshal(buf.Bytes(), &checksumCache)
+		if err != nil {
+			return fmt.Errorf("Failed to Unmarshal bytes to checksumCache: %v\n", err)
+		}
+	*/
+	return nil
+}
+
+func runScripts(scripts ...string) error {
+	for _, script := range scripts {
+		cmd := exec.Command(script)
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error running script: %v\n", err)
+		}
 	}
 	return nil
 }
 
 func main() {
-	fmt.Println("signature-updater v0.0.6")
+	fmt.Println("signature-updater v0.0.7")
 
 	filePath := os.Getenv("CLAM_UPDATE_SECRETS_FILE")
 
@@ -486,8 +348,8 @@ func main() {
 		appSecrets.ConfigFileMap[item] = struct{}{}
 	}
 
-	confLen := len(appSecrets.ConfigFiles)
-	checksumCache = models.NewVerifiedFiles(confLen)
+	//confLen := len(appSecrets.ConfigFiles)
+	//checksumCache = models.NewVerifiedFiles(confLen)
 
 	sess, err := getSession()
 	if err != nil {
@@ -511,27 +373,31 @@ func main() {
 		fmt.Println("Error returned from DownloadSignatures:", err)
 	}
 
-	/*
-		sess, err := getSession()
-		if err != nil {
-			fmt.Println("Error returned from getSession: ", err)
-		}
+	err = runScripts(
+		"/usr/bin/freshclam",
+		"/usr/sbin/clamav-unofficial-sigs.sh",
+		//"/usr/local/bin/pull-custom-signatures.sh",
+	)
+	if err != nil {
+		fmt.Println("Error running scripts: ", err)
+	}
 
-		svc := getService(sess)
+	cloneURL := fmt.Sprintf("https://oauth2:" + appSecrets.GitPullToken + "@gitlab.cee.redhat.com/service/clamav-custom-signatures.git")
+	cmd := exec.Command("git", "clone", cloneURL)
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("error running git clone: %v\n", err)
+	}
 
-		err = DownloadSignatures(svc)
-		if err != nil {
-			fmt.Println("Error uploading files to bucket: ", err)
-		}
-	*/
+	cmd = exec.Command("cp", "clamav-custom-signatures/*", appSecrets.ClamConfigDir)
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("error copying custom signature files to clam dir: %v\n", err)
+	}
 
 	err = upload(appSecrets.BucketName, appSecrets.ClamConfigDir, appSecrets.ConfigFiles)
 	if err != nil {
 		fmt.Println("Error uploading files to bucket: ", err)
 	}
-
-	err = uploadSingle(appSecrets.BucketName, appSecrets.ChecksumFile, checksumCache)
-	if err != nil {
-		fmt.Println("Error uploading verifiedFiles checksum map to bucket: ", err)
-	}
+	fmt.Println("Finished running. Exiting.")
 }
