@@ -12,6 +12,25 @@ if [ "$OO_PAUSE_ON_START" = "true" ] ; then
   done
 fi
 
+declare update_interval
+
+if [[ ! $UPDATE_INTERVAL ]] ; then
+  update_interval=$UPDATE_INTERVAL
+else
+  update_interval=43200
+fi
+
 echo 'Pushing signatures to bucket every 12 hours'
 echo '----------------'
-/usr/local/bin/ops-run-in-loop 43200 /usr/local/bin/clam-update
+# /usr/local/bin/ops-run-in-loop 43200 /usr/local/bin/clam-update
+while true; do
+  if /usr/local/bin/clam-update; then
+      echo "clam-update returned successfully."
+      echo "sleeping $update_interval seconds."
+      sleep $update_interval
+  else
+    echo "clam-update exited with code: $?."
+    echo "sleeping for 10 seconds before trying again."
+    sleep 10
+  fi
+done
