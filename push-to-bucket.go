@@ -96,12 +96,18 @@ func gzipFile2(fileBytes []byte) (*bytes.Buffer, error) {
 	zw := gzip.NewWriter(&buf)
 	zw.ModTime = time.Now()
 
-	if _, err := zw.Write(fileBytes); err != nil {
+	wB, err := zw.Write(fileBytes)
+	if err != nil {
 		return &buf, fmt.Errorf("error writing zw: %v\n", err)
 	}
+	fmt.Printf("Wrote %v bytes to the gzip buffer.\n", wB)
 
 	if err := zw.Close(); err != nil {
 		return &buf, fmt.Errorf("error closing zw: %v\n", err)
+	}
+
+	if wB == 0 {
+		return &buf, fmt.Errorf("This buffer is empty and will not be uploaded.")
 	}
 
 	return &buf, nil
@@ -111,6 +117,7 @@ func upload(bucket, fileDir string, fileList []string) error {
 	for _, fileName := range fileList {
 		filePath := path.Join(fileDir, fileName)
 
+		fmt.Println("Attempting to open local file: ", filePath)
 		file, err := os.Open(filePath)
 		if err != nil {
 			fmt.Printf("Unable to open file %v: %v\n", filePath, err)
@@ -122,29 +129,35 @@ func upload(bucket, fileDir string, fileList []string) error {
 		sha := sha256.New()
 
 		tr := io.TeeReader(file, sha)
-		checksum := hex.EncodeToString(sha.Sum(nil))
-
-		if checksum == "" {
-			continue
-		}
-
-		err = uploadSingle(bucket, fileName+"_checksum.txt", checksum)
-		if err != nil {
-			return fmt.Errorf("Unable to upload %v to %v, %v\n", filePath, bucket, err)
-		}
-		// END HASH
 
 		//reader := bufio.NewReader(file)
 		//zipData, err := gzipFile(filePath)
 		//r := bytes.NewReader(data)
 		fileBytes, err := io.ReadAll(tr)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Error reading fileBytes from TeeReeder", err)
+			continue
 		}
+
+		checksum := hex.EncodeToString(sha.Sum(nil))
+
+		if checksum == "" {
+			continue
+		}
+
+		var checksumBuffer bytes.Buffer
+
+		checksumBuffer.WriteString(checksum)
+
+		err = uploadSingle(bucket, fileName+"_checksum.txt", &checksumBuffer)
+		if err != nil {
+			return fmt.Errorf("Unable to upload %v to %v because of error: %v\n", filePath, bucket, err)
+		}
+		// END HASH
 
 		zipData, err := gzipFile2(fileBytes)
 		if err != nil {
-			fmt.Printf("Unable to open file %v: %v\n", filePath, err)
+			fmt.Printf("Unable to compress the contents of file %v: %v\n", filePath, err)
 			continue
 		}
 
@@ -162,7 +175,7 @@ func upload(bucket, fileDir string, fileList []string) error {
 	return nil
 }
 
-func uploadSingle(bucket, fileName string, payload interface{}) error {
+func uploadSingle(bucket, fileName string, payload *bytes.Buffer) error {
 	sess, err := getSession()
 	if err != nil {
 		return fmt.Errorf("Error returned from getSession: %v\n", err)
@@ -170,17 +183,10 @@ func uploadSingle(bucket, fileName string, payload interface{}) error {
 
 	uploader := s3manager.NewUploader(sess)
 
-	b := new(bytes.Buffer)
-
-	err = json.NewEncoder(b).Encode(payload)
-	if err != nil {
-		return fmt.Errorf("Error encoding to bytes.Buffer: %v\n", err)
-	}
-
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(fileName),
-		Body:   b,
+		Body:   payload,
 	})
 	if err != nil {
 		return fmt.Errorf("Unable to upload %v to %v, %v\n", fileName, bucket, err)
@@ -220,6 +226,7 @@ func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
 
 	// Loop through bucket contents, and compare with our set. If file is a match, then download it.
 	for _, item := range resp.Contents {
+		fmt.Println("on item: ", item)
 		if strings.HasSuffix(*item.Key, ".gz") {
 			splitItem := strings.Split(*item.Key, ".gz")
 			baseItem := splitItem[0]
@@ -227,21 +234,23 @@ func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
 			newFile, err := os.Create(baseItem)
 			if err != nil {
 				fmt.Println("Unable to open file:", item)
-				return err
+				continue
+				//return err
 			}
-			//defer newFile.Close()
+			defer newFile.Close()
 
 			buf := aws.NewWriteAtBuffer([]byte{})
 
 			requestInput := s3.GetObjectInput{
-				Bucket: aws.String("osd-fr-signature-mirror"),
+				Bucket: aws.String(appSecrets.BucketName),
 				Key:    aws.String(*item.Key),
 			}
 
 			_, err = downloader.Download(buf, &requestInput)
 			if err != nil {
-				fmt.Println("Unable to download item:", item)
-				return fmt.Errorf("Download failed: %v\n", err)
+				fmt.Println("Unable to download item, skipping:", item)
+				continue
+				//return fmt.Errorf("Download failed: %v\n", err)
 			}
 
 			r := bytes.NewReader(buf.Bytes())
@@ -257,15 +266,18 @@ func DownloadSignatures(svc s3iface.S3API, resp *s3.ListObjectsV2Output) error {
 			//checksum := hex.EncodeToString(sha.Sum(nil))
 
 			if _, err := io.Copy(newFile, zr); err != nil {
-				return fmt.Errorf("could not copy zr to newFile: %v\n", err)
+				fmt.Printf("could not copy zr to newFile: %v\n", err)
+				//return fmt.Errorf("could not copy zr to newFile: %v\n", err)
 			}
 
 			if err := zr.Close(); err != nil {
-				return fmt.Errorf("could not close zr: %v\n", err)
+				fmt.Printf("could not close zr: %v\n", err)
+				//return fmt.Errorf("could not close zr: %v\n", err)
 			}
 
 			if err := newFile.Close(); err != nil {
-				return fmt.Errorf("could not close newFile: %v\n", err)
+				fmt.Printf("could not close newFile: %v\n", err)
+				//return fmt.Errorf("could not close newFile: %v\n", err)
 			}
 
 			fmt.Println("Downloaded the following:")
@@ -291,7 +303,7 @@ func downloadSingle(item string, svc *s3.S3) error {
 	downloader := s3manager.NewDownloaderWithClient(svc)
 
 	requestInput := s3.GetObjectInput{
-		Bucket: aws.String("osd-fr-signature-mirror"),
+		Bucket: aws.String(appSecrets.BucketName),
 		Key:    aws.String(item),
 	}
 
@@ -322,9 +334,12 @@ func runScripts(scripts ...string) error {
 }
 
 func main() {
-	fmt.Println("signature-updater v0.0.7")
+	fmt.Println("clam-update v0.0.9")
 
 	filePath := os.Getenv("CLAM_UPDATE_SECRETS_FILE")
+	if filePath == "" {
+		filePath = "/secrets/update_secrets.json"
+	}
 
 	err := loadConfigFile(filePath, &appSecrets)
 	if err != nil {
@@ -344,7 +359,11 @@ func main() {
 		appSecrets.ClamConfigDir = appSecrets.ClamConfigDir + "/"
 	}
 
+	appSecrets.ConfigFileMap = make(map[string]interface{}, len(appSecrets.ConfigFiles))
+
+	fmt.Println("The following files will be pushed to the bucket if they are found:")
 	for _, item := range appSecrets.ConfigFiles {
+		fmt.Println(item)
 		appSecrets.ConfigFileMap[item] = struct{}{}
 	}
 
@@ -358,29 +377,33 @@ func main() {
 
 	svc := getService(sess)
 
-	err = downloadSingle(appSecrets.ChecksumFile, svc)
+	/*err = downloadSingle(appSecrets.ChecksumFile, svc)
 	if err != nil {
 		fmt.Println("Error returned from downloadSingle for ChecksumFile file:", err)
-	}
+	}*/
 
 	resp, err := listBucketObjects(svc)
 	if err != nil {
 		fmt.Println("Error returned from ListBucketObjects:", err)
 	}
 
+	fmt.Println("Length of bucket Contents was: ", len(resp.Contents))
+
 	err = DownloadSignatures(svc, resp)
 	if err != nil {
 		fmt.Println("Error returned from DownloadSignatures:", err)
 	}
 
-	err = runScripts(
-		"/usr/bin/freshclam",
-		"/usr/sbin/clamav-unofficial-sigs.sh",
-		//"/usr/local/bin/pull-custom-signatures.sh",
-	)
-	if err != nil {
-		fmt.Println("Error running scripts: ", err)
-	}
+	/*
+		err = runScripts(
+			"/usr/bin/freshclam",
+			"/usr/sbin/clamav-unofficial-sigs.sh",
+			//"/usr/local/bin/pull-custom-signatures.sh",
+		)
+		if err != nil {
+			fmt.Println("Error running scripts: ", err)
+		}
+	*/
 
 	cloneURL := fmt.Sprintf("https://oauth2:" + appSecrets.GitPullToken + "@gitlab.cee.redhat.com/service/clamav-custom-signatures.git")
 	cmd := exec.Command("git", "clone", cloneURL)

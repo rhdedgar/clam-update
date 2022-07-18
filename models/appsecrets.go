@@ -18,11 +18,11 @@ package models
 
 // AppSecrets holds needed config info for the application to function
 type AppSecrets struct {
-	BucketName    string `json:"signature_mirror_bucket"`
-	BucketRegion  string `json:"signature_bucket_region"`
-	BucketKey     string `json:"signature_bucket_key"`
-	BucketKeyID   string `json:"signature_bucket_key_id"`
-	ChecksumFile  string `json:"checksum_file"`
+	BucketName   string `json:"signature_mirror_bucket"`
+	BucketRegion string `json:"signature_bucket_region"`
+	BucketKey    string `json:"signature_bucket_key"`
+	BucketKeyID  string `json:"signature_bucket_key_id"`
+	//ChecksumFile  string `json:"checksum_file"`
 	ClamConfigDir string `json:"clam_config_dir"`
 	// ConfigFiles is a list of signature databases and other files expected to be loaded into clamd.
 	ConfigFiles []string `json:"config_files"`

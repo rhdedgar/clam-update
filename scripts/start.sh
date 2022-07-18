@@ -12,9 +12,17 @@ if [ "$OO_PAUSE_ON_START" = "true" ] ; then
   done
 fi
 
+if [ "$CRON_JOB" = "true" ] ; then
+  echo
+  echo "The CRON_JOB variable has been set. This container will pull custom signatures, push the relevant contents of the shared volume to the mirror bucket, and then exit."
+  echo '----------------'
+  /usr/local/bin/clam-update
+  exit 0
+fi
+
 declare update_interval
 
-if [[ ! $UPDATE_INTERVAL ]] ; then
+if [[ $UPDATE_INTERVAL ]] ; then
   update_interval=$UPDATE_INTERVAL
 else
   update_interval=43200
@@ -22,7 +30,6 @@ fi
 
 echo 'Pushing signatures to bucket every 12 hours'
 echo '----------------'
-# /usr/local/bin/ops-run-in-loop 43200 /usr/local/bin/clam-update
 while true; do
   if /usr/local/bin/clam-update; then
       echo "clam-update returned successfully."

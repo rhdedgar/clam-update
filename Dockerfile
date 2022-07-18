@@ -7,12 +7,14 @@ RUN microdnf install -y golang
 ENV GOBIN=/bin \
     GOPATH=/go
 
-# install clam-update
-RUN /usr/bin/go install
+COPY ./ ./
+RUN /usr/bin/go install .
 
 
 # begin run container definition
 FROM registry.access.redhat.com/ubi8/ubi-minimal as run
+
+RUN microdnf install -y git
 
 ADD scripts/ /usr/local/bin/
 
